@@ -36,3 +36,19 @@ def calculate_stock_beta_idio_volatility(stock_returns: pd.DataFrame, market_ret
     daily_idio_volatility = np.std(residuals)
 
     return beta, daily_idio_volatility
+
+def calculate_daily_market_volatility(market_returns: pd.Series) -> float:
+    """
+    Calculate the daily market volatility.
+
+    Parameters:
+    market_returns (pd.Series): Series of daily returns for the market (e.g., S&P 500).
+
+    Returns:
+    float: Daily market volatility.
+    """
+    
+    # Calculate the daily market volatility (standard deviation of daily returns)
+    daily_market_volatility = np.std(market_returns)
+    
+    return daily_market_volatility
