@@ -1,29 +1,38 @@
-import yfinance as yf
+import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from typing import Tuple
 
-def calculate_beta(stock_ticker, start_date, end_date):
-    # Get data for the stock and the market
-    stock = yf.download(stock_ticker, start=start_date, end=end_date)
-    market = yf.download("SPY", start=start_date, end=end_date)
 
-    # Calculate returns
-    stock['Return'] = stock['Close'].pct_change()
-    market['Return'] = market['Close'].pct_change()
+def calculate_stock_beta_idio_volatility(stock_returns: pd.DataFrame, market_returns: pd.DataFrame) -> Tuple[float, float]:
+    """
+    Calculate the stock's beta and daily idiosyncratic volatility.
 
-    # Drop NaN values
-    stock = stock.dropna(subset=['Return'])
-    market = market.dropna(subset=['Return'])
+    Parameters:
+    stock_returns (pd.Series): Series of daily returns for the stock.
+    market_returns (pd.Series): Series of daily returns for the market (e.g., S&P 500).
 
-    # Merge the returns into a single DataFrame
-    data = pd.merge(stock['Return'], market['Return'], left_index=True, right_index=True, suffixes=('_stock', '_market'))
+    Returns:
+    tuple: (beta, daily_idio_volatility)
+    """
 
-    # Perform linear regression
-    X = sm.add_constant(data['Return_market'])
-    model = sm.OLS(data['Return_stock'], X)
-    results = model.fit()
+    # Ensure the inputs are aligned and drop NaNs
+    data = pd.DataFrame({'stock_returns': stock_returns, 'market_returns': market_returns}).dropna()
 
-    # Get the beta coefficient
-    beta = results.params['Return_market']
+    # Independent variable (market returns) and adding constant for intercept
+    X = sm.add_constant(data['market_returns'])
 
-    return beta
+    # Dependent variable (stock returns)
+    Y = data['stock_returns']
+
+    # Perform linear regression to get the beta
+    model = sm.OLS(Y, X).fit()
+    beta = model.params['market_returns']
+
+    # Calculate the residuals (idiosyncratic returns)
+    residuals = model.resid
+
+    # Calculate the daily idiosyncratic volatility
+    daily_idio_volatility = np.std(residuals)
+
+    return beta, daily_idio_volatility
