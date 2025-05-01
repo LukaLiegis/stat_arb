@@ -1,33 +1,92 @@
-from src.calculation import calculate_stock_beta_idio_volatility, calculate_daily_market_volatility
-import yfinance as yf
+import logging
+from datetime import time, datetime, timedelta
 
-market_data = yf.download("SPY", start="2018-01-01", end="2019-01-01")
-wmt = yf.download("WMT", start="2018-01-01", end="2019-01-01")
-syf = yf.download("SYF", start="2018-01-01", end="2019-01-01")
+from src.data import exchange, fetch_latest_data
+from src.order_execution import execute_order
+from src.position_management import manage_position
+from src.prediction import generate_trading_signal
 
-# Calculate daily returns
-wmt_returns = wmt['Adj Close'].pct_change().dropna()
-syf_returns = syf['Adj Close'].pct_change().dropna()
-market_returns = market_data['Adj Close'].pct_change().dropna()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename="stat_arb_trading.log",
+)
 
-beta_wmt, idio_volatility_wmt = calculate_stock_beta_idio_volatility(wmt_returns, market_returns)
-beta_syf, idio_volatility_syf = calculate_stock_beta_idio_volatility(syf_returns, market_returns)
-market_volatility = calculate_daily_market_volatility(market_returns)
+symbols = ['XRPUSDT', 'BTCUSDT', 'BNBUSDT', 'SOLUSDT']
+target_symbol = 'XRPUSDT'
+target_idx = 0
+account_size = 100
+model_retrain_interval = 7 * 24 * 60 * 60
+position = 0
 
-nmv_wmt = 10_000_000
-nvm_syf = 5_000_000
-nvm_spy = 10_000_000
+def wait_until_next_minute():
+    now = datetime.now()
+    next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    wait_seconds = (next_minute - now).total_seconds()
 
-print("\nResults of WMT:")
-print(f"Beta of WMT: {beta_wmt}")
-print(f"Idiosyncratic volatility of WMT: {idio_volatility_wmt}")
-print("\nResults of SYF:")
-print(f"Beta of SYF: {beta_syf}")
-print(f"Idiosyncratic volatility of SYF: {idio_volatility_syf}")
-print(f"\nMarket volatility: {market_volatility}")
+    buffer_seconds = 0.1
 
-portfolio_beta = beta_wmt * nmv_wmt + beta_syf * nvm_syf + 1 * nvm_spy
-print(f"\nPortfolio beta: {portfolio_beta}")
+    if wait_seconds > 0:
+        time.sleep(wait_seconds + buffer_seconds)
 
-portfolio_market_vol = portfolio_beta * market_volatility
-print(f"\nPortfolio market volatility: {portfolio_market_vol.round(2)}")
+    execution_time = datetime.now()
+    logging.info(f"Executing at: {execution_time.strftime('%Y-%m-%d %H:%M:%S.%f')}")
+
+def run_trading_bot():
+    global position
+
+    last_model_training_time = 0
+
+    while True:
+        try:
+            wait_until_next_minute()
+
+            current_time = time.time()
+            current_datetime = datetime.now()
+
+            logging.info(f"Starting trading cycle at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            cycle_start_time = time.time()
+
+            if current_time - last_model_training_time > model_retrain_interval:
+                logging.info(f"Retraining model at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                history_data = {}
+                for symbol in symbols:
+                    ohlcv = exchange.fetch_ohlcv()
+                    ...
+
+                logging.info(f"Model training done at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            logging.info(f"Fetching latest market data at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            current_data = fetch_latest_data(symbols, timeframe='1m', limit=250)
+
+            prediction = generate_trading_signal(
+                [current_data[s.replace('/', '')] for s in symbols],
+                target_idx
+            )
+            logging.info(f"Generated prediction: {prediction:.6f}")
+
+            target_position = manage_position(position, prediction)
+            logging.info(f"Current position: {position:.2f}, Target position: {target_position:.2f}")
+
+            # Execute order of position changes
+            if target_position != position:
+                position = execute_order(target_symbol, target_position, position, account_size)
+                logging.info(f"New position: {position:.2f}")
+
+            #TODO: Get account balance and log performance
+
+            # Check if execution took too long
+            cycle_duration = time.time() - cycle_start_time
+            logging.info(f"Cycle duration: {cycle_duration:.2f}")
+
+            if cycle_duration > 55:
+                logging.warning(f"Execution time ({cycle_duration:.2f}s) is approaching the 1-minute limit")
+
+        except Exception as e:
+            logging.error(f'Error in main loop: {e}')
+
+if __name__ == '__main__':
+    logging.info("Starting trading bot...")
+    run_trading_bot()
